@@ -9,7 +9,7 @@ def init_db():
     conn = sqlite3.connect("milling_center.db")
     cursor = conn.cursor()
     
-    # Valyuta kursi jadvali (Boshlang'ich 1 USD = 12800 UZS)
+    # 1. Sozlamalar va Valyuta kursi (Boshlang'ich: 1 USD = 12800 UZS)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
@@ -18,7 +18,7 @@ def init_db():
     ''')
     cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('usd_rate', 12800.0)")
     
-    # Foydalanuvchilar
+    # 2. Foydalanuvchilar (Login/Parol va Rol)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -30,7 +30,7 @@ def init_db():
     cursor.execute("INSERT OR IGNORE INTO users (username, password, role) VALUES ('admin', 'admin123', 'admin')")
     cursor.execute("INSERT OR IGNORE INTO users (username, password, role) VALUES ('user', 'user123', 'registratura')")
     
-    # Ish turlari va narxi (USD da)
+    # 3. Ish turlari va narxlari (USD da)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS services (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -39,7 +39,7 @@ def init_db():
         )
     ''')
     
-    # Mijozlar bazasi (Asosiy balans USD da)
+    # 4. Mijozlar bazasi
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS clients (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -49,7 +49,7 @@ def init_db():
         )
     ''')
     
-    # Buyurtmalar (Barcha hisob-kitoblar USD da, kurs saqlanadi)
+    # 5. Buyurtmalar
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS orders (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -66,7 +66,7 @@ def init_db():
         )
     ''')
     
-    # To'lovlar tarixi (UZS da berilgan pul izi saqlanadi)
+    # 6. To'lovlar tarixi (UZS da topshirilgan pul va kursi)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS payments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -84,27 +84,27 @@ def init_db():
 init_db()
 
 # --- Schemas ---
-class LoginRequest(BaseModel):
+class LoginReq(BaseModel):
     username: str
     password: str
 
-class UserCreate(BaseModel):
+class UserReq(BaseModel):
     username: str
     password: str
     role: str
 
-class RateUpdate(BaseModel):
+class RateReq(BaseModel):
     usd_rate: float
 
-class ServiceCreate(BaseModel):
+class ServiceReq(BaseModel):
     name: str
     price_usd: float
 
-class ClientCreate(BaseModel):
+class ClientReq(BaseModel):
     name: str
     phone: str
 
-class OrderCreate(BaseModel):
+class OrderReq(BaseModel):
     client_id: int
     service_name: str
     unit_count: int
@@ -113,14 +113,18 @@ class OrderCreate(BaseModel):
     usd_rate: float
     deadline: str
 
-class PaymentCreate(BaseModel):
+class PaymentReq(BaseModel):
     client_id: int
     amount_uzs: float
     usd_rate: float
 
 # --- Endpoints ---
+@app.get("/")
+def home():
+    return {"status": "active", "message": "Dental Milling Server ISHLAYAPTI"}
+
 @app.post("/login/")
-def login(req: LoginRequest):
+def login(req: LoginReq):
     conn = sqlite3.connect("milling_center.db")
     cursor = conn.cursor()
     cursor.execute("SELECT username, role FROM users WHERE username = ? AND password = ?", (req.username, req.password))
@@ -128,9 +132,8 @@ def login(req: LoginRequest):
     conn.close()
     if user:
         return {"status": "ok", "username": user[0], "role": user[1]}
-    raise HTTPException(status_code=401, detail="Xato login/parol")
+    raise HTTPException(status_code=401, detail="Login yoki parol noto'g'ri")
 
-# --- Kurs boshqaruvi ---
 @app.get("/rate/")
 def get_rate():
     conn = sqlite3.connect("milling_center.db")
@@ -141,15 +144,14 @@ def get_rate():
     return {"usd_rate": rate}
 
 @app.post("/rate/")
-def update_rate(rate: RateUpdate):
+def update_rate(req: RateReq):
     conn = sqlite3.connect("milling_center.db")
     cursor = conn.cursor()
-    cursor.execute("UPDATE settings SET value = ? WHERE key = 'usd_rate'", (rate.usd_rate,))
+    cursor.execute("UPDATE settings SET value = ? WHERE key = 'usd_rate'", (req.usd_rate,))
     conn.commit()
     conn.close()
-    return {"message": "Valyuta kursi yangilandi"}
+    return {"message": "Kurs yangilandi"}
 
-# --- Users boshqaruvi ---
 @app.get("/users/")
 def get_users():
     conn = sqlite3.connect("milling_center.db")
@@ -160,28 +162,17 @@ def get_users():
     return [{"id": u[0], "username": u[1], "role": u[2]} for u in users]
 
 @app.post("/users/")
-def add_user(user: UserCreate):
+def add_user(req: UserReq):
     conn = sqlite3.connect("milling_center.db")
     cursor = conn.cursor()
     try:
-        cursor.execute("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", 
-                       (user.username, user.password, user.role))
+        cursor.execute("INSERT INTO users (username, password, role) VALUES (?, ?, ?)", (req.username, req.password, req.role))
         conn.commit()
     except:
         conn.close()
-        raise HTTPException(status_code=400, detail="Bunday loginli foydalanuvchi mavjud")
+        raise HTTPException(status_code=400, detail="Bunday login mavjud")
     conn.close()
-    return {"message": "Foydalanuvchi qo'shildi"}
-
-# --- Services, Clients, Orders & Payments ---
-@app.post("/services/")
-def add_service(service: ServiceCreate):
-    conn = sqlite3.connect("milling_center.db")
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO services (name, price_usd) VALUES (?, ?)", (service.name, service.price_usd))
-    conn.commit()
-    conn.close()
-    return {"message": "Ish turi qo'shildi"}
+    return {"message": "Akkaunt yaratildi"}
 
 @app.get("/services/")
 def get_services():
@@ -192,14 +183,14 @@ def get_services():
     conn.close()
     return [{"id": s[0], "name": s[1], "price_usd": s[2]} for s in services]
 
-@app.post("/clients/")
-def add_client(client: ClientCreate):
+@app.post("/services/")
+def add_service(req: ServiceReq):
     conn = sqlite3.connect("milling_center.db")
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO clients (name, phone) VALUES (?, ?)", (client.name, client.phone))
+    cursor.execute("INSERT INTO services (name, price_usd) VALUES (?, ?)", (req.name, req.price_usd))
     conn.commit()
     conn.close()
-    return {"message": "Mijoz qo'shildi"}
+    return {"message": "Ish turi qo'shildi"}
 
 @app.get("/clients/")
 def get_clients():
@@ -210,22 +201,14 @@ def get_clients():
     conn.close()
     return [{"id": c[0], "name": c[1], "phone": c[2], "balance_usd": c[3]} for c in clients]
 
-@app.post("/orders/")
-def create_order(order: OrderCreate):
+@app.post("/clients/")
+def add_client(req: ClientReq):
     conn = sqlite3.connect("milling_center.db")
     cursor = conn.cursor()
-    created_at = datetime.now().strftime("%Y-%m-%d %H:%M")
-    
-    cursor.execute('''
-        INSERT INTO orders (client_id, service_name, unit_count, total_usd, total_uzs, usd_rate, created_at, deadline)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (order.client_id, order.service_name, order.unit_count, order.total_usd, order.total_uzs, order.usd_rate, created_at, order.deadline))
-    
-    cursor.execute("UPDATE clients SET balance_usd = balance_usd + ? WHERE id = ?", (order.total_usd, order.client_id))
-    
+    cursor.execute("INSERT INTO clients (name, phone) VALUES (?, ?)", (req.name, req.phone))
     conn.commit()
     conn.close()
-    return {"message": "Buyurtma saqlandi"}
+    return {"message": "Mijoz qo'shildi"}
 
 @app.get("/orders/")
 def get_orders():
@@ -242,22 +225,34 @@ def get_orders():
     conn.close()
     return orders
 
-@app.post("/payments/")
-def make_payment(payment: PaymentCreate):
+@app.post("/orders/")
+def create_order(req: OrderReq):
     conn = sqlite3.connect("milling_center.db")
     cursor = conn.cursor()
     created_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+    cursor.execute('''
+        INSERT INTO orders (client_id, service_name, unit_count, total_usd, total_uzs, usd_rate, created_at, deadline)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (req.client_id, req.service_name, req.unit_count, req.total_usd, req.total_uzs, req.usd_rate, created_at, req.deadline))
     
-    amount_usd = payment.amount_uzs / payment.usd_rate
+    cursor.execute("UPDATE clients SET balance_usd = balance_usd + ? WHERE id = ?", (req.total_usd, req.client_id))
+    conn.commit()
+    conn.close()
+    return {"message": "Buyurtma qabul qilindi"}
+
+@app.post("/payments/")
+def make_payment(req: PaymentReq):
+    conn = sqlite3.connect("milling_center.db")
+    cursor = conn.cursor()
+    created_at = datetime.now().strftime("%Y-%m-%d %H:%M")
+    amount_usd = req.amount_uzs / req.usd_rate
     
     cursor.execute('''
         INSERT INTO payments (client_id, amount_uzs, amount_usd, usd_rate, created_at)
         VALUES (?, ?, ?, ?, ?)
-    ''', (payment.client_id, payment.amount_uzs, amount_usd, payment.usd_rate, created_at))
+    ''', (req.client_id, req.amount_uzs, amount_usd, req.usd_rate, created_at))
     
-    # Balansdan qarzni ayirish
-    cursor.execute("UPDATE clients SET balance_usd = balance_usd - ? WHERE id = ?", (amount_usd, payment.client_id))
-    
+    cursor.execute("UPDATE clients SET balance_usd = balance_usd - ? WHERE id = ?", (amount_usd, req.client_id))
     conn.commit()
     conn.close()
-    return {"message": "To'lov qabul qilindi"}
+    return {"message": "To'lov saqlandi"}
