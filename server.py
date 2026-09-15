@@ -1,4 +1,3 @@
-# Server uchun kerakli kutubxonalar: pip install fastapi uvicorn sqlite3
 from fastapi import FastAPI
 from pydantic import BaseModel
 import sqlite3
@@ -6,11 +5,9 @@ from datetime import datetime
 
 app = FastAPI()
 
-# Ma'lumotlar bazasini sozlash (SQLite / PostgreSQL)
 def init_db():
     conn = sqlite3.connect("milling_center.db")
     cursor = conn.cursor()
-    # Mijozlar jadvali
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS clients (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -19,7 +16,6 @@ def init_db():
             balance REAL DEFAULT 0.0
         )
     ''')
-    # Buyurtmalar jadvali
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS orders (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -38,7 +34,6 @@ def init_db():
 
 init_db()
 
-# Ma'lumot strukturalari
 class ClientCreate(BaseModel):
     name: str
     phone: str
@@ -50,7 +45,6 @@ class OrderCreate(BaseModel):
     total_price: float
     deadline: str
 
-# API endpointlar
 @app.post("/clients/")
 def add_client(client: ClientCreate):
     conn = sqlite3.connect("milling_center.db")
@@ -64,10 +58,11 @@ def add_client(client: ClientCreate):
 def get_clients():
     conn = sqlite3.connect("milling_center.db")
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM clients")
+    cursor.execute("SELECT id, name, phone, balance FROM clients")
     clients = cursor.fetchall()
     conn.close()
-    return clients
+    # Formatlab ro'yxat qaytarish
+    return [{"id": c[0], "name": c[1], "phone": c[2], "balance": c[3]} for c in clients]
 
 @app.post("/orders/")
 def create_order(order: OrderCreate):
@@ -75,13 +70,11 @@ def create_order(order: OrderCreate):
     cursor = conn.cursor()
     created_at = datetime.now().strftime("%Y-%m-%d %H:%M")
     
-    # Buyurtmani saqlash
     cursor.execute('''
         INSERT INTO orders (client_id, work_type, unit_count, total_price, created_at, deadline)
         VALUES (?, ?, ?, ?, ?, ?)
     ''', (order.client_id, order.work_type, order.unit_count, order.total_price, created_at, order.deadline))
     
-    # Mijoz qarzdorligini (balansini) oshirish
     cursor.execute("UPDATE clients SET balance = balance + ? WHERE id = ?", (order.total_price, order.client_id))
     
     conn.commit()
@@ -102,8 +95,3 @@ def get_orders():
     orders = cursor.fetchall()
     conn.close()
     return orders
-
-if __name__ == "__main__":
-    import uvicorn
-    # Serverni local tarmoqda ishga tushirish (0.0.0.0 barcha kompyuterlar ulanishiga ruxsat beradi)
-    uvicorn.run(app, host="0.0.0.0", port=8000)
